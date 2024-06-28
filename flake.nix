@@ -33,7 +33,7 @@
             }: pkgs.stdenv.mkDerivation {
               inherit doCheck;
               pname = "manifold-${parallel-backend}";
-              version = "2.4.5";
+              version = "2.5.1";
               src = self;
               nativeBuildInputs = (with pkgs; [
                 cmake
@@ -72,7 +72,7 @@
             { parallel-backend = "none"; }
             {
               parallel-backend = "tbb";
-              build-tools = with pkgs; [ tbb_2021_8 pkg-config ];
+              build-tools = with pkgs; [ tbb pkg-config ];
             }
           ];
         in
@@ -86,7 +86,7 @@
               parallelBackends)) // {
             manifold-js = pkgs.buildEmscriptenPackage {
               name = "manifold-js";
-              version = "2.4.5";
+              version = "2.5.1";
               src = self;
               nativeBuildInputs = (with pkgs; [ cmake python39 ]);
               buildInputs = [ pkgs.nodejs ];
@@ -120,13 +120,13 @@
             # but how should we make it work with other python versions?
             manifold3d = with pkgs.python3Packages; buildPythonPackage {
               pname = "manifold3d";
-              version = "2.4.5";
+              version = "2.5.1";
               src = self;
               propagatedBuildInputs = [
                 numpy
               ];
               buildInputs = with pkgs; [
-                tbb_2021_8
+                tbb
                 glm
                 clipper2
               ];
@@ -156,7 +156,7 @@
           devShell = pkgs.mkShell {
             buildInputs = with pkgs; [
               cmake
-              tbb_2021_8
+              tbb
               gtest
             ];
           };

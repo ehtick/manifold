@@ -35,7 +35,7 @@ TEST(Smooth, Tetrahedron) {
 
   MeshGL out = smooth.CalculateCurvature(-1, 0).GetMeshGL();
   float maxMeanCurvature = 0;
-  for (int i = 3; i < out.vertProperties.size(); i += 4) {
+  for (size_t i = 3; i < out.vertProperties.size(); i += 4) {
     maxMeanCurvature =
         glm::max(maxMeanCurvature, glm::abs(out.vertProperties[i]));
   }
@@ -48,7 +48,8 @@ TEST(Smooth, Tetrahedron) {
 
 TEST(Smooth, RefineQuads) {
   Manifold cylinder =
-      Manifold(WithPositionColors(Manifold::Cylinder(2, 1, -1, 12).SmoothOut()))
+      Manifold(WithPositionColors(Manifold::Cylinder(2, 1, -1, 12)))
+          .SmoothOut()
           .RefineToLength(0.05);
   EXPECT_EQ(cylinder.NumTri(), 16892);
   auto prop = cylinder.GetProperties();
@@ -59,7 +60,7 @@ TEST(Smooth, RefineQuads) {
 
   const MeshGL baseline = WithPositionColors(cylinder);
   float maxDiff = 0;
-  for (int i = 0; i < out.vertProperties.size(); ++i) {
+  for (size_t i = 0; i < out.vertProperties.size(); ++i) {
     maxDiff = glm::max(
         maxDiff, glm::abs(out.vertProperties[i] - baseline.vertProperties[i]));
   }
@@ -77,13 +78,21 @@ TEST(Smooth, RefineQuads) {
 }
 
 TEST(Smooth, TruncatedCone) {
-  Manifold cone = Manifold::Cylinder(5, 10, 5, 12).SmoothOut();
-  Manifold smooth = cone.RefineToLength(0.5).CalculateNormals(0);
+  Manifold cone = Manifold::Cylinder(5, 10, 5, 12);
+  Manifold smooth = cone.SmoothOut().RefineToLength(0.5).CalculateNormals(0);
   auto prop = smooth.GetProperties();
-  EXPECT_NEAR(prop.volume, 1062.27, 0.01);
-  EXPECT_NEAR(prop.surfaceArea, 751.46, 0.01);
+  EXPECT_NEAR(prop.volume, 1158.61, 0.01);
+  EXPECT_NEAR(prop.surfaceArea, 768.12, 0.01);
   MeshGL out = smooth.GetMeshGL();
   CheckGL(out);
+
+  Manifold smooth1 = cone.SmoothOut(180, 1).RefineToLength(0.5);
+  auto prop1 = smooth1.GetProperties();
+
+  Manifold smooth2 = cone.SmoothOut(180, 0).RefineToLength(0.5);
+  auto prop2 = smooth2.GetProperties();
+  EXPECT_NEAR(prop2.volume, prop1.volume, 0.01);
+  EXPECT_NEAR(prop2.surfaceArea, prop1.surfaceArea, 0.01);
 
 #ifdef MANIFOLD_EXPORT
   ExportOptions options2;
@@ -97,7 +106,8 @@ TEST(Smooth, TruncatedCone) {
 
 TEST(Smooth, ToLength) {
   Manifold cone = Manifold::Extrude(
-      CrossSection::Circle(10, 10).Translate({10, 0}), 2, 0, 0, {0, 0});
+      CrossSection::Circle(10, 10).Translate({10, 0}).ToPolygons(), 2, 0, 0,
+      {0, 0});
   cone += cone.Scale({1, 1, -5});
   Manifold smooth = Manifold::Smooth(cone.GetMesh());
   smooth = smooth.RefineToLength(0.1);
@@ -108,7 +118,7 @@ TEST(Smooth, ToLength) {
 
   MeshGL out = smooth.CalculateCurvature(-1, 0).GetMeshGL();
   float maxMeanCurvature = 0;
-  for (int i = 3; i < out.vertProperties.size(); i += 4) {
+  for (size_t i = 3; i < out.vertProperties.size(); i += 4) {
     maxMeanCurvature =
         glm::max(maxMeanCurvature, glm::abs(out.vertProperties[i]));
   }
@@ -260,7 +270,8 @@ glm::vec4 CircularTangent(const glm::vec3& tangent, const glm::vec3& edgeVec) {
 
 TEST(Smooth, Torus) {
   Mesh torusMesh =
-      Manifold::Revolve(CrossSection::Circle(1, 8).Translate({2, 0}), 6)
+      Manifold::Revolve(
+          CrossSection::Circle(1, 8).Translate({2, 0}).ToPolygons(), 6)
           .GetMesh();
   const int numTri = torusMesh.triVerts.size();
 
@@ -298,7 +309,7 @@ TEST(Smooth, Torus) {
                         .CalculateNormals(1);
   MeshGL out = smooth.GetMeshGL();
   float maxMeanCurvature = 0;
-  for (int i = 0; i < out.vertProperties.size(); i += 7) {
+  for (size_t i = 0; i < out.vertProperties.size(); i += 7) {
     glm::vec3 v(out.vertProperties[i], out.vertProperties[i + 1],
                 out.vertProperties[i + 2]);
     glm::vec3 p(v.x, v.y, 0);
@@ -331,8 +342,8 @@ TEST(Smooth, SineSurface) {
   Manifold smoothed =
       Manifold(surface).CalculateNormals(0, 50).SmoothByNormals(0).Refine(8);
   auto prop = smoothed.GetProperties();
-  EXPECT_NEAR(prop.volume, 7.89, 0.01);
-  EXPECT_NEAR(prop.surfaceArea, 30.60, 0.01);
+  EXPECT_NEAR(prop.volume, 8.09, 0.01);
+  EXPECT_NEAR(prop.surfaceArea, 30.93, 0.01);
   EXPECT_EQ(smoothed.Genus(), 0);
 
   Manifold smoothed1 = Manifold(surface).SmoothOut(50).Refine(8);
@@ -343,14 +354,14 @@ TEST(Smooth, SineSurface) {
 
   Manifold smoothed2 = Manifold(surface).SmoothOut(180, 1).Refine(8);
   auto prop2 = smoothed2.GetProperties();
-  EXPECT_NEAR(prop2.volume, 9.02, 0.01);
-  EXPECT_NEAR(prop2.surfaceArea, 33.56, 0.01);
+  EXPECT_NEAR(prop2.volume, 9.00, 0.01);
+  EXPECT_NEAR(prop2.surfaceArea, 33.61, 0.01);
   EXPECT_EQ(smoothed2.Genus(), 0);
 
   Manifold smoothed3 = Manifold(surface).SmoothOut(50, 0.5).Refine(8);
   auto prop3 = smoothed3.GetProperties();
-  EXPECT_NEAR(prop3.volume, 8.46, 0.01);
-  EXPECT_NEAR(prop3.surfaceArea, 31.66, 0.01);
+  EXPECT_NEAR(prop3.volume, 8.44, 0.01);
+  EXPECT_NEAR(prop3.surfaceArea, 31.72, 0.01);
   EXPECT_EQ(smoothed3.Genus(), 0);
 
 #ifdef MANIFOLD_EXPORT

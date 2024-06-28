@@ -42,7 +42,7 @@ struct PolyEdge {
 std::vector<PolyEdge> Polygons2Edges(const PolygonsIdx &polys) {
   std::vector<PolyEdge> halfedges;
   for (const auto &poly : polys) {
-    for (int i = 1; i < poly.size(); ++i) {
+    for (size_t i = 1; i < poly.size(); ++i) {
       halfedges.push_back({poly[i - 1].idx, poly[i].idx});
     }
     halfedges.push_back({poly.back().idx, poly[0].idx});
@@ -63,20 +63,23 @@ std::vector<PolyEdge> Triangles2Edges(
 }
 
 void CheckTopology(const std::vector<PolyEdge> &halfedges) {
-  ASSERT(halfedges.size() % 2 == 0, topologyErr, "Odd number of halfedges.");
+  DEBUG_ASSERT(halfedges.size() % 2 == 0, topologyErr,
+               "Odd number of halfedges.");
   size_t n_edges = halfedges.size() / 2;
   std::vector<PolyEdge> forward(halfedges.size()), backward(halfedges.size());
 
   auto end = std::copy_if(halfedges.begin(), halfedges.end(), forward.begin(),
                           [](PolyEdge e) { return e.endVert > e.startVert; });
-  ASSERT(std::distance(forward.begin(), end) == n_edges, topologyErr,
-         "Half of halfedges should be forward.");
+  DEBUG_ASSERT(
+      static_cast<size_t>(std::distance(forward.begin(), end)) == n_edges,
+      topologyErr, "Half of halfedges should be forward.");
   forward.resize(n_edges);
 
   end = std::copy_if(halfedges.begin(), halfedges.end(), backward.begin(),
                      [](PolyEdge e) { return e.endVert < e.startVert; });
-  ASSERT(std::distance(backward.begin(), end) == n_edges, topologyErr,
-         "Half of halfedges should be backward.");
+  DEBUG_ASSERT(
+      static_cast<size_t>(std::distance(backward.begin(), end)) == n_edges,
+      topologyErr, "Half of halfedges should be backward.");
   backward.resize(n_edges);
 
   std::for_each(backward.begin(), backward.end(),
@@ -87,10 +90,10 @@ void CheckTopology(const std::vector<PolyEdge> &halfedges) {
   };
   std::stable_sort(forward.begin(), forward.end(), cmp);
   std::stable_sort(backward.begin(), backward.end(), cmp);
-  for (int i = 0; i < n_edges; ++i) {
-    ASSERT(forward[i].startVert == backward[i].startVert &&
-               forward[i].endVert == backward[i].endVert,
-           topologyErr, "Not manifold.");
+  for (size_t i = 0; i < n_edges; ++i) {
+    DEBUG_ASSERT(forward[i].startVert == backward[i].startVert &&
+                     forward[i].endVert == backward[i].endVert,
+                 topologyErr, "Not manifold.");
   }
 }
 
@@ -108,16 +111,16 @@ void CheckGeometry(const std::vector<glm::ivec3> &triangles,
                    const PolygonsIdx &polys, float precision) {
   std::unordered_map<int, glm::vec2> vertPos;
   for (const auto &poly : polys) {
-    for (int i = 0; i < poly.size(); ++i) {
+    for (size_t i = 0; i < poly.size(); ++i) {
       vertPos[poly[i].idx] = poly[i].pos;
     }
   }
-  ASSERT(std::all_of(triangles.begin(), triangles.end(),
-                     [&vertPos, precision](const glm::ivec3 &tri) {
-                       return CCW(vertPos[tri[0]], vertPos[tri[1]],
-                                  vertPos[tri[2]], precision) >= 0;
-                     }),
-         geometryErr, "triangulation is not entirely CCW!");
+  DEBUG_ASSERT(std::all_of(triangles.begin(), triangles.end(),
+                           [&vertPos, precision](const glm::ivec3 &tri) {
+                             return CCW(vertPos[tri[0]], vertPos[tri[1]],
+                                        vertPos[tri[2]], precision) >= 0;
+                           }),
+               geometryErr, "triangulation is not entirely CCW!");
 }
 
 void Dump(const PolygonsIdx &polys) {
@@ -145,7 +148,7 @@ void PrintFailure(const std::exception &e, const PolygonsIdx &polys,
   std::cout << e.what() << std::endl;
   Dump(polys);
   std::cout << "produced this triangulation:" << std::endl;
-  for (int j = 0; j < triangles.size(); ++j) {
+  for (size_t j = 0; j < triangles.size(); ++j) {
     std::cout << triangles[j][0] << ", " << triangles[j][1] << ", "
               << triangles[j][2] << std::endl;
   }
@@ -156,6 +159,60 @@ void PrintFailure(const std::exception &e, const PolygonsIdx &polys,
 #else
 #define PRINT(msg)
 #endif
+
+/**
+ * Tests if the input polygons are convex by searching for any reflex vertices.
+ * Exactly colinear edges and zero-length edges are treated conservatively as
+ * reflex. Does not check for overlaps.
+ */
+bool IsConvex(const PolygonsIdx &polys, float precision) {
+  for (const SimplePolygonIdx &poly : polys) {
+    const glm::vec2 firstEdge = poly[0].pos - poly[poly.size() - 1].pos;
+    // Zero-length edges comes out NaN, which won't trip the early return, but
+    // it's okay because that zero-length edge will also get tested
+    // non-normalized and will trip det == 0.
+    glm::vec2 lastEdge = glm::normalize(firstEdge);
+    for (size_t v = 0; v < poly.size(); ++v) {
+      const glm::vec2 edge =
+          v + 1 < poly.size() ? poly[v + 1].pos - poly[v].pos : firstEdge;
+      const float det = determinant2x2(lastEdge, edge);
+      if (det <= 0 ||
+          (glm::abs(det) < precision && glm::dot(lastEdge, edge) < 0))
+        return false;
+      lastEdge = glm::normalize(edge);
+    }
+  }
+  return true;
+}
+
+/**
+ * Triangulates a set of convex polygons by alternating instead of a fan, to
+ * avoid creating high-degree vertices.
+ */
+std::vector<glm::ivec3> TriangulateConvex(const PolygonsIdx &polys) {
+  const size_t numTri = transform_reduce<size_t>(
+      autoPolicy(polys.size()), polys.begin(), polys.end(),
+      [](const SimplePolygonIdx &poly) { return poly.size() - 2; }, 0,
+      thrust::plus<size_t>());
+  std::vector<glm::ivec3> triangles;
+  triangles.reserve(numTri);
+  for (const SimplePolygonIdx &poly : polys) {
+    size_t i = 0;
+    size_t k = poly.size() - 1;
+    bool right = true;
+    while (i + 1 < k) {
+      const size_t j = right ? i + 1 : k - 1;
+      triangles.push_back({poly[i].idx, poly[j].idx, poly[k].idx});
+      if (right) {
+        i = j;
+      } else {
+        k = j;
+      }
+      right = !right;
+    }
+  }
+  return triangles;
+}
 
 /**
  * Ear-clipping triangulator based on David Eberly's approach from Geometric
@@ -176,7 +233,7 @@ class EarClip {
   EarClip(const PolygonsIdx &polys, float precision) : precision_(precision) {
     ZoneScoped;
 
-    int numVert = 0;
+    size_t numVert = 0;
     for (const SimplePolygonIdx &poly : polys) {
       numVert += poly.size();
     }
@@ -459,7 +516,7 @@ class EarClip {
 
       const int lid = left->mesh_idx;
       const int rid = right->mesh_idx;
-      for (int i = 0; i < toTest.size(); ++i) {
+      for (size_t i = 0; i < toTest.size(); ++i) {
         const VertItr test = collider.itr[toTest.Get(i, true)];
         if (!Clipped(test) && test->mesh_idx != mesh_idx &&
             test->mesh_idx != lid &&
@@ -759,7 +816,7 @@ class EarClip {
     if (v->IsShort(precision_)) {
       v->cost = kBest;
       v->ear = earsQueue_.insert(v);
-    } else if (v->IsConvex(precision_)) {
+    } else if (v->IsConvex(2 * precision_)) {
       v->cost = v->EarCost(precision_, collider);
       v->ear = earsQueue_.insert(v);
     } else {
@@ -845,7 +902,7 @@ class EarClip {
       v = v->right;
     }
 
-    ASSERT(v->right == v->left, logicErr, "Triangulator error!");
+    DEBUG_ASSERT(v->right == v->left, logicErr, "Triangulator error!");
     PRINT("Finished poly");
   }
 
@@ -895,10 +952,17 @@ std::vector<glm::ivec3> TriangulateIdx(const PolygonsIdx &polys,
                                        float precision) {
   std::vector<glm::ivec3> triangles;
   float updatedPrecision = precision;
+#if MANIFOLD_EXCEPTION
   try {
-    EarClip triangulator(polys, precision);
-    updatedPrecision = triangulator.GetPrecision();
-    triangles = triangulator.Triangulate();
+#endif
+    if (IsConvex(polys, precision)) {  // fast path
+      triangles = TriangulateConvex(polys);
+    } else {
+      EarClip triangulator(polys, precision);
+      triangles = triangulator.Triangulate();
+      updatedPrecision = triangulator.GetPrecision();
+    }
+#if MANIFOLD_EXCEPTION
 #ifdef MANIFOLD_DEBUG
     if (params.intermediateChecks) {
       CheckTopology(triangles, polys);
@@ -918,6 +982,7 @@ std::vector<glm::ivec3> TriangulateIdx(const PolygonsIdx &polys,
   } catch (const std::exception &e) {
 #endif
   }
+#endif
   return triangles;
 }
 
