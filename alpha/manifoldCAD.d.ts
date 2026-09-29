@@ -246,8 +246,6 @@ export declare class CrossSection {
      * @group Transformations
      */
     simplify(tolerance?: number): CrossSection;
-    tolerance(): number;
-    setTolerance(tolerance: number): CrossSection;
 
     // Clipping Operations
 
@@ -474,14 +472,12 @@ export declare interface ExecutionContext {
      */
     progress(): number;
 
-    // ctx-aware static factories: like Manifold.ofMesh / smooth / levelSet, but
+    // ctx-aware static factories: like Manifold.ofMesh / levelSet, but
     // run under this context so progress / cancellation are observed (these ops
     // have no source Manifold to attach via Manifold.withContext).
 
     /** Like {@link Manifold.ofMesh}, observed/cancellable via this context. */
     fromMesh(mesh: Mesh): Manifold;
-    /** Like {@link Manifold.smooth}, observed/cancellable via this context. */
-    smooth(mesh: Mesh, sharpenedEdges?: readonly Smoothness[]): Manifold;
     /** Like {@link Manifold.levelSet}, observed/cancellable via this context. */
     levelSet(
     sdf: (point: Vec3) => number, bounds: Box, edgeLength: number,
@@ -862,38 +858,6 @@ export declare class Manifold {
      */
     static ofMesh(mesh: Mesh): Manifold;
 
-    /**
-     * Constructs a smooth version of the input mesh by creating tangents; this
-     * method will throw if you have supplied tangents with your mesh already. The
-     * actual triangle resolution is unchanged; use the Refine() method to
-     * interpolate to a higher-resolution curve.
-     *
-     * By default, every edge is calculated for maximum smoothness (very much
-     * approximately), attempting to minimize the maximum mean Curvature
-     * magnitude. No higher-order derivatives are considered, as the interpolation
-     * is independent per triangle, only sharing constraints on their boundaries.
-     *
-     * @param mesh input Mesh.
-     * @param sharpenedEdges If desired, you can supply a vector of sharpened
-     * halfedges, which should in general be a small subset of all halfedges.
-     * Order of entries doesn't matter, as each one specifies the desired
-     * smoothness (between zero and one, with one the default for all unspecified
-     * halfedges) and the halfedge index (3 * triangle index + [0,1,2] where 0 is
-     * the edge between triVert 0 and 1, etc).
-     *
-     * At a smoothness value of zero, a sharp crease is made. The smoothness is
-     * interpolated along each edge, so the specified value should be thought of
-     * as an average. Where exactly two sharpened edges meet at a vertex, their
-     * tangents are rotated to be colinear so that the sharpened edge can be
-     * continuous. Vertices with only one sharpened edge are completely smooth,
-     * allowing sharpened edges to smoothly vanish at termination. A single vertex
-     * can be sharpened by sharping all edges that are incident on it, allowing
-     * cones to be formed.
-     *
-     * @group Smoothing
-     */
-    static smooth(mesh: Mesh, sharpenedEdges?: readonly Smoothness[]): Manifold;
-
     // Signed Distance Functions
 
     /**
@@ -1018,26 +982,6 @@ export declare class Manifold {
      * @group Smoothing
      */
     smoothByNormals(normalIdx?: number): Manifold;
-
-    /**
-     * Smooths out the Manifold by filling in the halfedgeTangent vectors. The
-     * geometry will remain unchanged until Refine or RefineToLength is called to
-     * interpolate the surface. This version uses the geometry of the triangles
-     * and pseudo-normals to define the tangent vectors.
-     *
-     * @param minSharpAngle degrees, default 52.5. Any edges with angles greater
-     * than this value will remain sharp. The rest will be smoothed to G1
-     * continuity, with the caveat that flat faces of three or more triangles will
-     * always remain flat. With a value of zero, the model is faceted, but in this
-     * case there is no point in smoothing.
-     *
-     * @param minSmoothness range: 0 - 1, default 0. The smoothness applied to
-     * sharp angles. The default gives a hard edge, while values > 0 will give a
-     * small fillet on these sharp edges. A value of 1 is equivalent to a
-     * minSharpAngle of 180 - all edges will be smooth.
-     * @group Smoothing
-     */
-    smoothOut(minSharpAngle?: number, minSmoothness?: number): Manifold;
 
     /**
      * Increase the density of the mesh by splitting every edge into n pieces. For
@@ -1365,24 +1309,6 @@ export declare class Manifold {
     boundingBox(): Box;
 
     /**
-     * Returns the tolerance of this Manifold's vertices, which tracks the
-     * approximate rounding error over all the transforms and operations that have
-     * led to this state. Any triangles that are colinear within this tolerance
-     * are considered degenerate and removed. This is the value of &epsilon;
-     * defining
-     * [&epsilon;-valid](https://github.com/elalish/manifold/wiki/Manifold-Library#definition-of-%CE%B5-valid).
-     * @group Information
-     */
-    tolerance(): number;
-
-    /**
-     * Return a copy of the manifold with the set tolerance value.
-     * This performs mesh simplification when the tolerance value is increased.
-     * @group Transformations
-     */
-    setTolerance(tolerance: number): Manifold;
-
-    /**
      * Return a copy of the manifold simplified to the given tolerance, but with
      * its actual tolerance value unchanged. The result will contain a subset of
      * the original verts and all surfaces will have moved by less than tolerance.
@@ -1494,12 +1420,13 @@ export declare class Manifold {
     // ID Management
 
     /**
-     * If you copy a manifold, but you want this new copy to have new properties
-     * (e.g. a different UV mapping), you can reset its IDs to a new original,
-     * meaning it will now be referenced by its descendants instead of the meshes
-     * it was built from, allowing you to differentiate the copies when applying
-     * your properties to the final result.
+     * This removes all relations (originalID, faceID, transform) to ancestor
+     * meshes and this new Manifold is marked an original. It also recreates faces
+     * - these don't get joined at boundaries where originalID changes, so the
+     * reset may allow triangles of flat faces to be further collapsed with
+     * Simplify().
      *
+     <<<<<<< HEAD
      * This function also condenses all coplanar faces in the relation, and
      * collapses those edges. If you want to have inconsistent properties across
      * these faces, meaning you want to preserve some of these edges, you should
@@ -1507,8 +1434,16 @@ export declare class Manifold {
      * construct a new manifold.
      *
      * @group Mesh ID
+     =======
+     * @param id The ID to assign to this manifold. If negative (the default), a
+     *     new ID is assigned. Use zero to match all default-constructed
+     *     manifolds, thus not keeping track of the joints between input
+     *     manifolds. Ensure separate IDs are used for mesh inputs containing
+     *     properties, generally by calling this function without arguments just
+     *     after construction.
+     >>>>>>> c15c7025 (switch meshID tracking to opt-in)
      */
-    asOriginal(): Manifold;
+    asOriginal(id?: number): Manifold;
 
     /**
      * If this mesh is an original, this returns its ID that can be referenced
@@ -1890,11 +1825,6 @@ export declare function setMorphStart(manifold: Manifold, func: (v: Vec3) => voi
 export declare function show(manifold: Manifold): Manifold;
 
 export declare type SimplePolygon = Vec2[];
-
-export declare type Smoothness = {
-    halfedge: number,
-    smoothness: number
-};
 
 /**
  * Triangulates a set of /epsilon-valid polygons.
