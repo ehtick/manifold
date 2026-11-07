@@ -113,9 +113,9 @@ export declare class CrossSection {
      * avoid interpolation artifacts. Default is none.
      * @param twistDegrees Amount to twist the top crossSection relative to the
      * bottom, interpolated linearly for the divisions in between.
-     * @param scaleTop Amount to scale the top (independently in X and Y). If the
-     * scale is {0, 0}, a pure cone is formed with only a single vertex at the
-     * top. Default {1, 1}.
+     * @param scaleTop Amount to scale the top (independently in X and Y). A
+     * single number scales X and Y equally. If the scale is {0, 0}, a pure cone
+     * is formed with only a single vertex at the top. Default {1, 1}.
      * @param center If true, the extrusion is centered on the z-axis through the
      *     origin
      * as opposed to resting on the XY plane as is default.
@@ -357,6 +357,20 @@ export declare class CrossSection {
      * @group Input & Output
      */
     static evenOdd(contours: Polygons): CrossSection;
+
+    /**
+     * Create a 2d cross-section from a set of contours, reading them by the
+     * nonzero rule: a sub-region is filled when its signed winding number is
+     * not zero. Both clockwise and counter-clockwise contours can enclose solid
+     * regions; opposite windings cancel where their sum is zero. Unlike even-odd
+     * fill, a winding of two remains filled. The result is regularized like any
+     * other CrossSection, so every later operation behaves the same.
+     *
+     * @param contours A set of closed paths describing zero or more complex
+     * polygons.
+     * @group Input & Output
+     */
+    static nonZero(contours: Polygons): CrossSection;
 
     /**
      * Return the contours of this CrossSection as a list of simple polygons.
@@ -812,9 +826,9 @@ export declare class Manifold {
      * avoid interpolation artifacts. Default is none.
      * @param twistDegrees Amount to twist the top crossSection relative to the
      * bottom, interpolated linearly for the divisions in between.
-     * @param scaleTop Amount to scale the top (independently in X and Y). If the
-     * scale is {0, 0}, a pure cone is formed with only a single vertex at the
-     * top. Default {1, 1}.
+     * @param scaleTop Amount to scale the top (independently in X and Y). A
+     * single number scales X and Y equally. If the scale is {0, 0}, a pure cone
+     * is formed with only a single vertex at the top. Default {1, 1}.
      * @param center If true, the extrusion is centered on the z-axis through the
      *     origin
      * as opposed to resting on the XY plane as is default.
@@ -1426,22 +1440,12 @@ export declare class Manifold {
      * reset may allow triangles of flat faces to be further collapsed with
      * Simplify().
      *
-     <<<<<<< HEAD
-     * This function also condenses all coplanar faces in the relation, and
-     * collapses those edges. If you want to have inconsistent properties across
-     * these faces, meaning you want to preserve some of these edges, you should
-     * instead call GetMesh(), calculate your properties and use these to
-     * construct a new manifold.
-     *
-     * @group Mesh ID
-     =======
      * @param id The ID to assign to this manifold. If negative (the default), a
      *     new ID is assigned. Use zero to match all default-constructed
      *     manifolds, thus not keeping track of the joints between input
      *     manifolds. Ensure separate IDs are used for mesh inputs containing
      *     properties, generally by calling this function without arguments just
      *     after construction.
-     >>>>>>> c15c7025 (switch meshID tracking to opt-in)
      */
     asOriginal(id?: number): Manifold;
 
@@ -1746,7 +1750,8 @@ export declare type RayHit = {
     faceID: number,
     distance: number,
     position: Vec3,
-    normal: Vec3
+    normal: Vec3,
+    crossing: number
 };
 
 /**
